@@ -381,13 +381,9 @@ def process_frame():
             face = cv2.resize(frame[y:y+h, x:x+w], (50, 50))
             identified_person = identify_face(face.reshape(1, -1))
             if identified_person:
-                person_id = identified_person[0]
-                username, userid = person_id.split('_')
-                add_attendance(person_id, selected_date)
+                add_attendance(identified_person[0], selected_date)
                 return jsonify({
-                    'person': person_id,
-                    'name': username,
-                    'roll': userid,
+                    'person': identified_person[0],
                     'box': {'x': x, 'y': y, 'w': w, 'h': h}
                 })
         return jsonify({'person': None})
@@ -431,9 +427,8 @@ def start():
                 face = cv2.resize(frame[y:y+h, x:x+w], (50, 50))
                 identified_person = identify_face(face.reshape(1, -1))
                 if identified_person:
-                    username, userid = identified_person[0].split('_')
                     add_attendance(identified_person[0], selected_date)
-                    cv2.putText(frame, f'{username} ({userid})', (x+5, y-5),
+                    cv2.putText(frame, f'{identified_person[0]}', (x+5, y-5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.imshow('Attendance', frame)
             if cv2.waitKey(1) == 27:  # ESC key to exit
@@ -460,7 +455,6 @@ def add():
     if request.method == 'POST':
         newusername = request.form['newusername']
         newuserid = request.form['newuserid']
-        is_modal = request.form.get('is_modal', 'false') == 'true'
         
         normalized_username = newuserid
         
@@ -530,66 +524,43 @@ def add():
                     return redirect(url_for('admin_dashboard'))
             cap.release()
             cv2.destroyAllWindows()
-            try:
-                train_model()
-                flash('Student added and face data captured successfully!', 'success')
-            except Exception as e:
-                flash(f'Error training model: {str(e)}', 'danger')
-                if not existing_user:
-                    db.session.delete(new_user)
-                    db.session.commit()
-                deletefolder(userimagefolder)
-            return redirect(url_for('admin_dashboard'))
         else:  # Server environment
-            if is_modal:
-                return jsonify({
-                    'success': True,
-                    'newusername': newusername,
-                    'newuserid': newuserid,
-                    'nimgs': nimgs
-                })
             return render_template('add_face.html', newusername=newusername, newuserid=newuserid, nimgs=nimgs)
         
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/batch_capture', methods=['POST'])
-def batch_capture():
-    try:
-        data = request.json
-        frames = data['frames']
-        newusername = data['newusername']
-        newuserid = data['newuserid']
-        
-        userimagefolder = f'static/faces/{newusername}_{newuserid}'
-        if not os.path.isdir(userimagefolder):
-            os.makedirs(userimagefolder)
-        
-        saved_count = 0
-        for i, frame_data in enumerate(frames):
-            frame = base64_to_image(frame_data)
-            if frame is None:
-                continue
-            faces = extract_faces(frame)
-            if len(faces) > 0:
-                (x, y, w, h) = faces[0]
-                face_img = frame[y:y+h, x:x+w]
-                name = f'{newusername}_{saved_count}.jpg'
-                cv2.imwrite(f'{userimagefolder}/{name}', face_img)
-                saved_count += 1
-                if saved_count >= nimgs:
-                    break
-        
-        if saved_count >= nimgs:
+        try:
             train_model()
             flash('Student added and face data captured successfully!', 'success')
-            return jsonify({'success': True})
-        else:
-            shutil.rmtree(userimagefolder)
-            return jsonify({'success': False, 'error': f'Captured only {saved_count} valid faces, need {nimgs}'}), 400
+        except Exception as e:
+            flash(f'Error training model: {str(e)}', 'danger')
+            if not existing_user:
+                db.session.delete(new_user)
+                db.session.commit()
+            deletefolder(userimagefolder)
+            return redirect(url_for('admin_dashboard'))
+    
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/capture_face', methods=['POST'])
+def capture_face():
+    try:
+        data = request.json
+        frame = base64_to_image(data['frame'])
+        newusername = data['newusername']
+        newuserid = data['newuserid']
+        image_count = data['image_count']
+        
+        userimagefolder = f'static/faces/{newusername}_{newuserid}'
+        faces = extract_faces(frame)
+        
+        if len(faces) > 0:
+            (x, y, w, h) = faces[0]
+            face_img = frame[y:y+h, x:x+w]
+            name = f'{newusername}_{image_count}.jpg'
+            cv2.imwrite(f'{userimagefolder}/{name}', face_img)
+            return jsonify({'success': True, 'image_count': image_count + 1})
+        return jsonify({'success': False, 'error': 'No face detected'})
     except Exception as e:
-        logger.error(f"Error in batch capture: {str(e)}")
-        if os.path.exists(userimagefolder):
-            shutil.rmtree(userimagefolder)
+        logger.error(f"Error capturing face: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/finish_capture', methods=['POST'])
@@ -600,14 +571,12 @@ def finish_capture():
         newuserid = data['newuserid']
         userimagefolder = f'static/faces/{newusername}_{newuserid}'
         
-        if os.path.exists(userimagefolder):
-            train_model()
-            flash('Student added and face data captured successfully!', 'success')
-            return jsonify({'success': True})
-        else:
-            return jsonify({'success': False, 'error': 'No images captured'}), 400
+        train_model()
+        flash('Student added and face data captured successfully!', 'success')
+        return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error finishing capture: {str(e)}")
+        flash(f'Error training model: {str(e)}', 'danger')
         if os.path.exists(userimagefolder):
             shutil.rmtree(userimagefolder)
         return jsonify({'success': False, 'error': str(e)}), 500

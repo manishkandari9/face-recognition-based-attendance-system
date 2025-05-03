@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initialqa-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin Dashboard - Face Recognition Attendance System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -237,44 +237,6 @@
             cursor: pointer;
         }
 
-        .modal-content {
-            border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-        }
-
-        .modal-header {
-            background: linear-gradient(90deg, #059669, #10b981);
-            color: white;
-            border-radius: 12px 12px 0 0;
-        }
-
-        #videoFeed {
-            width: 100%;
-            max-width: 640px;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        #canvas {
-            display: none;
-        }
-
-        #progress {
-            color: blue;
-            font-weight: bold;
-            margin-top: 1rem;
-            font-size: 1.25rem;
-        }
-
-        .btn-success {
-            background: #059669;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-        }
-
         @media (max-width: 992px) {
             .sidebar {
                 width: 100%;
@@ -430,7 +392,7 @@
                         Add New User
                     </div>
                     <div class="card-body">
-                        <form id="addUserForm" onsubmit="return validateUserId()">
+                        <form action="/add" method="POST" onsubmit="return validateUserId()">
                             <div class="mb-3">
                                 <label for="newusername" class="form-label">Name</label>
                                 <input type="text" class="form-control" id="newusername" name="newusername" required>
@@ -442,7 +404,6 @@
                                        oninput="this.value = this.value.slice(0, 11)" required>
                                 <div id="userid-error" class="text-danger" style="font-size: 0.875rem; margin-top: 0.25rem;"></div>
                             </div>
-                            <input type="hidden" name="is_modal" value="true">
                             <button type="submit" class="btn btn-primary btn-modern w-100">
                                 <span class="material-icons">person_add</span> Add User
                             </button>
@@ -453,26 +414,6 @@
         </div>
     </div>
 
-    <!-- Modal for Face Capture -->
-    <div class="modal fade" id="faceCaptureModal" tabindex="-1" aria-labelledby="faceCaptureModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="faceCaptureModalLabel">Add Face for <span id="modalUsername"></span> (ID: <span id="modalUserid"></span>)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <button id="startCapture" class="btn btn-success btn-modern mb-3">Start Capture</button>
-                    <button id="stopCapture" class="btn btn-danger btn-modern mb-3" style="display: none;">Stop Capture</button>
-                    <video id="videoFeed" autoplay style="display: none;"></video>
-                    <canvas id="canvas"></canvas>
-                    <p id="progress" class="text-center">Images Captured: 0/<span id="nimgs"></span></p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Clock Update
@@ -502,134 +443,6 @@
     
             userIdError.textContent = '';
             return true;
-        }
-
-        // Handle Add User Form Submission
-        document.getElementById('addUserForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            if (!validateUserId()) return;
-
-            const formData = new FormData(this);
-            fetch('/add', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const modal = new bootstrap.Modal(document.getElementById('faceCaptureModal'));
-                    document.getElementById('modalUsername').textContent = data.newusername;
-                    document.getElementById('modalUserid').textContent = data.newuserid;
-                    document.getElementById('nimgs').textContent = data.nimgs;
-                    modal.show();
-                    startFaceCapture(data.newusername, data.newuserid, data.nimgs);
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error adding user');
-            });
-        });
-
-        // Face Capture Logic
-        function startFaceCapture(newusername, newuserid, nimgs) {
-            let stream = null;
-            let imageCount = 0;
-            let capturedFrames = [];
-            const videoFeed = document.getElementById('videoFeed');
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d');
-            const startButton = document.getElementById('startCapture');
-            const stopButton = document.getElementById('stopCapture');
-            const progress = document.getElementById('progress');
-
-            async function startCapture() {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    videoFeed.srcObject = stream;
-                    videoFeed.style.display = 'block';
-                    startButton.style.display = 'none';
-                    stopButton.style.display = 'inline-block';
-                    captureFrame();
-                } catch (err) {
-                    alert('Failed to access camera: ' + err.message);
-                }
-            }
-
-            function stopCapture() {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                    videoFeed.style.display = 'none';
-                    startButton.style.display = 'inline-block';
-                    stopButton.style.display = 'none';
-                    progress.textContent = `Images Captured: ${imageCount}/${nimgs}`;
-                    sendCapturedFrames();
-                }
-            }
-
-            function captureFrame() {
-                if (!stream || imageCount >= nimgs) {
-                    stopCapture();
-                    return;
-                }
-                canvas.width = videoFeed.videoWidth || 640;
-                canvas.height = videoFeed.videoHeight || 480;
-                ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
-                const base64data = canvas.toDataURL('image/jpeg', 0.8);
-                capturedFrames.push(base64data);
-                imageCount++;
-                progress.textContent = `Images Captured: ${imageCount}/${nimgs}`;
-                
-                // Draw temporary bounding box and landmarks for feedback
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
-                const box = { x: canvas.width * 0.3, y: canvas.height * 0.2, w: canvas.width * 0.4, h: canvas.height * 0.4 }; // Placeholder
-                ctx.strokeStyle = 'blue';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(box.x, box.y, box.w, box.h);
-                ctx.fillStyle = 'red';
-                ctx.fillRect(box.x, box.y, 5, 5);
-                ctx.fillRect(box.x + box.w, box.y, 5, 5);
-                ctx.fillRect(box.x, box.y + box.h, 5, 5);
-                ctx.fillRect(box.x + box.w, box.y + box.h, 5, 5);
-                ctx.fillStyle = 'blue';
-                ctx.font = '16px Arial';
-                ctx.fillText(`Capturing: ${imageCount}/${nimgs}`, 30, 30);
-
-                setTimeout(captureFrame, 100); // Fast capture (100ms delay)
-            }
-
-            function sendCapturedFrames() {
-                $.ajax({
-                    url: '{{ url_for('batch_capture') }}',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({
-                        frames: capturedFrames,
-                        newusername: newusername,
-                        newuserid: newuserid
-                    }),
-                    success: (data) => {
-                        if (data.success) {
-                            bootstrap.Modal.getInstance(document.getElementById('faceCaptureModal')).hide();
-                        } else {
-                            alert('Error capturing faces: ' + data.error);
-                        }
-                    },
-                    error: (xhr) => {
-                        alert('Error capturing faces: ' + xhr.responseJSON.error);
-                    }
-                });
-            }
-
-            startButton.addEventListener('click', startCapture);
-            stopButton.addEventListener('click', stopCapture);
-
-            // Auto-start capture when modal opens
-            startCapture();
         }
     </script>
 </body>

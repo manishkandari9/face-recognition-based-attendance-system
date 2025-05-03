@@ -150,23 +150,29 @@
                                 progress.textContent = `Images Captured: ${imageCount}/${nimgs}`;
                                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                                 ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
-                                if (data.success && imageCount < nimgs) {
+                                if (data.box) {
                                     ctx.strokeStyle = 'blue';
                                     ctx.lineWidth = 2;
-                                    ctx.strokeRect(100, 100, 200, 200); // Example face box
+                                    ctx.strokeRect(data.box.x, data.box.y, data.box.w, data.box.h);
+                                    // Draw landmarks (4 corners of face)
+                                    ctx.fillStyle = 'red';
+                                    ctx.fillRect(data.box.x, data.box.y, 5, 5);
+                                    ctx.fillRect(data.box.x + data.box.w, data.box.y, 5, 5);
+                                    ctx.fillRect(data.box.x, data.box.y + data.box.h, 5, 5);
+                                    ctx.fillRect(data.box.x + data.box.w, data.box.y + data.box.h, 5, 5);
                                     ctx.fillStyle = 'blue';
                                     ctx.font = '16px Arial';
                                     ctx.fillText(`Capturing: ${imageCount}/${nimgs}`, 30, 30);
                                 }
-                                setTimeout(captureFrame, 500); // Delay for better UX
+                                setTimeout(captureFrame, 200); // Faster capture (200ms delay)
                             } else {
                                 console.error('Error capturing face:', data.error);
-                                setTimeout(captureFrame, 500);
+                                setTimeout(captureFrame, 200);
                             }
                         },
                         error: (xhr) => {
                             console.error('Error capturing face:', xhr.responseJSON.error);
-                            setTimeout(captureFrame, 500);
+                            setTimeout(captureFrame, 200);
                         }
                     });
                 };

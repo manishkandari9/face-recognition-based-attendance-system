@@ -1,7 +1,7 @@
 import cv2
 import os
 import shutil
-from flask import Flask, request, render_template, send_file, Response, session, redirect, url_for, flash
+from flask import Flask, request, render_template, send_file, Response, session, redirect, url_for, flash, jsonify
 from datetime import date, datetime
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
@@ -9,6 +9,10 @@ import pandas as pd
 import joblib
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+import logging
+import base64
+import io
+from PIL import Image
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -17,6 +21,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# Setup logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 nimgs = 10
 
 # Saving Date today in 2 different formats
@@ -24,7 +32,7 @@ datetoday = date.today().strftime("%m_%d_%y")
 datetoday2 = date.today().strftime("%d-%B-%Y")
 
 # Initialize VideoCapture object to access WebCam
-face_detector = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 # Create necessary directories
 if not os.path.isdir('Attendance'):
@@ -63,8 +71,12 @@ def extract_faces(img):
         return []
 
 def identify_face(facearray):
-    model = joblib.load('static/face_recognition_model.pkl')
-    return model.predict(facearray)
+    try:
+        model = joblib.load('static/face_recognition_model.pkl')
+        return model.predict(facearray)
+    except Exception as e:
+        logger.error(f"Error in identify_face: {str(e)}")
+        return None
 
 def train_model():
     faces = []
@@ -127,6 +139,16 @@ def get_attendance_dates():
     dates = [f.split('-')[1].split('.')[0] for f in files if f.startswith('Attendance-')]
     return sorted(dates, reverse=True)
 
+# Convert base64 image to OpenCV format
+def base64_to_image(base64_string):
+    try:
+        img_data = base64.b64decode(base64_string.split(',')[1])
+        img = Image.open(io.BytesIO(img_data))
+        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        logger.error(f"Error converting base64 to image: {str(e)}")
+        return None
+
 # Authentication Routes
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -137,12 +159,10 @@ def signup():
         user_id = request.form['user_id']
         role = request.form['role']
         
-        # Restrict signup to admin and teacher roles
         if role not in ['admin', 'teacher']:
             flash('Invalid role selected. Only admins and teachers can sign up here.', 'danger')
             return redirect(url_for('signup'))
         
-        # Check for existing username or user_id
         if User.query.filter_by(username=username).first():
             flash('Username already exists!', 'danger')
             return redirect(url_for('signup'))
@@ -151,7 +171,6 @@ def signup():
             flash('User ID already exists!', 'danger')
             return redirect(url_for('signup'))
         
-        # Add user to database
         new_user = User(
             username=username,
             password=generate_password_hash(password),
@@ -173,14 +192,12 @@ def login():
         password = request.form['password']
         user = User.query.filter_by(username=username).first()
         if user:
-            # For students, check if password matches hashed user_id
             if user.role == 'student' and check_password_hash(user.password, user.user_id):
                 if password == user.user_id:
                     session['username'] = username
                     session['role'] = user.role
                     flash('Login successful!', 'success')
                     return redirect(url_for('student_dashboard'))
-            # For admins/teachers, check provided password
             elif user.role in ['admin', 'teacher'] and check_password_hash(user.password, password):
                 session['username'] = username
                 session['role'] = user.role
@@ -293,27 +310,22 @@ def deleteuser():
         session.pop('role', None)
         return redirect(url_for('login'))
     
-    duser = request.args.get('user')  # e.g., "username_userid"
+    duser = request.args.get('user')
     if not duser:
         flash('No user specified for deletion.', 'danger')
         return redirect(url_for('listusers'))
     
-    # Extract username and user_id from duser
     try:
         username, user_id = duser.split('_')
     except ValueError:
         flash('Invalid user format.', 'danger')
         return redirect(url_for('listusers'))
     
-    # Delete user from database
     user_to_delete = User.query.filter_by(username=username, user_id=user_id).first()
     if user_to_delete:
         db.session.delete(user_to_delete)
         db.session.commit()
-    else:
-        flash('User not found in database.', 'warning')
     
-    # Delete user's face images
     user_folder = f'static/faces/{duser}'
     if os.path.exists(user_folder):
         try:
@@ -322,7 +334,6 @@ def deleteuser():
             flash(f'Error deleting face images: {str(e)}', 'danger')
             return redirect(url_for('listusers'))
     
-    # Retrain model or remove it if no users remain
     if os.listdir('static/faces'):
         try:
             train_model()
@@ -355,6 +366,31 @@ def download():
         flash('No attendance data for selected date.', 'danger')
         return redirect(url_for('teacher_dashboard' if session['role'] == 'teacher' else 'admin_dashboard'))
 
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
+    try:
+        data = request.json
+        frame = base64_to_image(data['frame'])
+        if frame is None:
+            return jsonify({'error': 'Invalid frame data'}), 400
+        
+        selected_date = data.get('selected_date', datetoday)
+        faces = extract_faces(frame)
+        if len(faces) > 0:
+            (x, y, w, h) = faces[0]
+            face = cv2.resize(frame[y:y+h, x:x+w], (50, 50))
+            identified_person = identify_face(face.reshape(1, -1))
+            if identified_person:
+                add_attendance(identified_person[0], selected_date)
+                return jsonify({
+                    'person': identified_person[0],
+                    'box': {'x': x, 'y': y, 'w': w, 'h': h}
+                })
+        return jsonify({'person': None})
+    except Exception as e:
+        logger.error(f"Error processing frame: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/start', methods=['GET'])
 def start():
     if 'username' not in session or session['role'] not in ['teacher', 'admin']:
@@ -367,30 +403,43 @@ def start():
         session.pop('role', None)
         return redirect(url_for('login'))
     selected_date = request.args.get('selected_date', datetoday)
-    names, rolls, times, l = extract_attendance(selected_date)
     if 'face_recognition_model.pkl' not in os.listdir('static'):
         flash('No trained model found. Please add a new face to continue.', 'danger')
         return redirect(url_for('admin_dashboard'))
-    ret = True
-    cap = cv2.VideoCapture(0)
-    while ret:
-        ret, frame = cap.read()
-        if len(extract_faces(frame)) > 0:
-            (x, y, w, h) = extract_faces(frame)[0]
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (86, 32, 251), 1)
-            cv2.rectangle(frame, (x, y), (x+w, y-40), (86, 32, 251), -1)
-            face = cv2.resize(frame[y:y+h, x:x+w], (50, 50))
-            identified_person = identify_face(face.reshape(1, -1))[0]
-            add_attendance(identified_person, selected_date)
-            cv2.putText(frame, f'{identified_person}', (x+5, y-5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.imshow('Attendance', frame)
-        if cv2.waitKey(1) == 27:
-            break
-    cap.release()
-    cv2.destroyAllWindows()
-    flash('Attendance recorded successfully!', 'success')
-    return redirect(url_for('teacher_dashboard' if session['role'] == 'teacher' else 'admin_dashboard'))
+    # Local system par purana flow (cv2.imshow ke saath)
+    if os.getenv('RENDER') is None:  # Local environment
+        ret = True
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(1)
+        if not cap.isOpened():
+            flash('Unable to access webcam!', 'danger')
+            return redirect(url_for('admin_dashboard'))
+        while ret:
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                flash('Error capturing video!', 'danger')
+                break
+            if len(extract_faces(frame)) > 0:
+                (x, y, w, h) = extract_faces(frame)[0]
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (86, 32, 251), 1)
+                cv2.rectangle(frame, (x, y), (x+w, y-40), (86, 32, 251), -1)
+                face = cv2.resize(frame[y:y+h, x:x+w], (50, 50))
+                identified_person = identify_face(face.reshape(1, -1))
+                if identified_person:
+                    add_attendance(identified_person[0], selected_date)
+                    cv2.putText(frame, f'{identified_person[0]}', (x+5, y-5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.imshow('Attendance', frame)
+            if cv2.waitKey(1) == 27:  # ESC key to exit
+                break
+        cap.release()
+        cv2.destroyAllWindows()
+        flash('Attendance recorded successfully!', 'success')
+        return redirect(url_for('admin_dashboard'))
+    # Server (Render) par WebRTC-based flow
+    else:
+        return render_template('start_attendance.html', selected_date=selected_date)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add():
@@ -407,26 +456,21 @@ def add():
         newusername = request.form['newusername']
         newuserid = request.form['newuserid']
         
-        # Set username to user_id for students
-        normalized_username = newuserid  # Username is user_id
+        normalized_username = newuserid
         
-        # Check if user exists
         existing_user = User.query.filter_by(user_id=newuserid).first()
         
         if existing_user:
-            # User exists, update face data
             userimagefolder = f'static/faces/{existing_user.name}_{newuserid}'
-            # Remove existing face data if any
             if os.path.exists(userimagefolder):
                 shutil.rmtree(userimagefolder)
         else:
-            # Create new user
             if User.query.filter_by(username=normalized_username).first():
                 flash('User ID already exists as a username!', 'danger')
                 return redirect(url_for('admin_dashboard'))
             new_user = User(
-                username=normalized_username,  # Username is user_id
-                password=generate_password_hash(newuserid),  # Password is hashed user_id
+                username=normalized_username,
+                password=generate_password_hash(newuserid),
                 role='student',
                 name=newusername,
                 user_id=newuserid
@@ -435,52 +479,54 @@ def add():
             db.session.commit()
             userimagefolder = f'static/faces/{newusername}_{newuserid}'
         
-        # Capture face images
         if not os.path.isdir(userimagefolder):
             os.makedirs(userimagefolder)
-        i, j = 0, 0
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            flash('Unable to access webcam!', 'danger')
-            if not existing_user:  # Roll back new user
-                db.session.delete(new_user)
-                db.session.commit()
-            return redirect(url_for('admin_dashboard'))
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                flash('Error capturing video!', 'danger')
-                if not existing_user:
-                    db.session.delete(new_user)
-                    db.session.commit()
-                cap.release()
-                return redirect(url_for('admin_dashboard'))
-            faces = extract_faces(frame)
-            for (x, y, w, h) in faces:
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 20), 2)
-                cv2.putText(frame, f'Images Captured: {i}/{nimgs}', (30, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 20), 2, cv2.LINE_AA)
-                if j % 5 == 0:
-                    name = f'{newusername}_{i}.jpg'
-                    cv2.imwrite(f'{userimagefolder}/{name}', frame[y:y+h, x:x+w])
-                    i += 1
-                j += 1
-            if j == nimgs*5:
-                break
-            cv2.imshow('Adding new User', frame)
-            if cv2.waitKey(1) == 27:
-                flash('Face capture cancelled.', 'warning')
-                if not existing_user:
-                    db.session.delete(new_user)
-                    db.session.commit()
-                deletefolder(userimagefolder)
-                cap.release()
-                cv2.destroyAllWindows()
-                return redirect(url_for('admin_dashboard'))
-        cap.release()
-        cv2.destroyAllWindows()
         
-        # Train the model
+        if os.getenv('RENDER') is None:  # Local environment
+            i, j = 0, 0
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                flash('Unable to access webcam!', 'danger')
+                if not existing_user:
+                    db.session.delete(new_user)
+                    db.session.commit()
+                return redirect(url_for('admin_dashboard'))
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    flash('Error capturing video!', 'danger')
+                    if not existing_user:
+                        db.session.delete(new_user)
+                        db.session.commit()
+                    cap.release()
+                    return redirect(url_for('admin_dashboard'))
+                faces = extract_faces(frame)
+                for (x, y, w, h) in faces:
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 20), 2)
+                    cv2.putText(frame, f'Images Captured: {i}/{nimgs}', (30, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 20), 2, cv2.LINE_AA)
+                    if j % 5 == 0:
+                        name = f'{newusername}_{i}.jpg'
+                        cv2.imwrite(f'{userimagefolder}/{name}', frame[y:y+h, x:x+w])
+                        i += 1
+                    j += 1
+                if j == nimgs*5:
+                    break
+                cv2.imshow('Adding new User', frame)
+                if cv2.waitKey(1) == 27:
+                    flash('Face capture cancelled.', 'warning')
+                    if not existing_user:
+                        db.session.delete(new_user)
+                        db.session.commit()
+                    deletefolder(userimagefolder)
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    return redirect(url_for('admin_dashboard'))
+            cap.release()
+            cv2.destroyAllWindows()
+        else:  # Server environment
+            return render_template('add_face.html', newusername=newusername, newuserid=newuserid, nimgs=nimgs)
+        
         try:
             train_model()
             flash('Student added and face data captured successfully!', 'success')
@@ -493,6 +539,47 @@ def add():
             return redirect(url_for('admin_dashboard'))
     
     return redirect(url_for('admin_dashboard'))
+
+@app.route('/capture_face', methods=['POST'])
+def capture_face():
+    try:
+        data = request.json
+        frame = base64_to_image(data['frame'])
+        newusername = data['newusername']
+        newuserid = data['newuserid']
+        image_count = data['image_count']
+        
+        userimagefolder = f'static/faces/{newusername}_{newuserid}'
+        faces = extract_faces(frame)
+        
+        if len(faces) > 0:
+            (x, y, w, h) = faces[0]
+            face_img = frame[y:y+h, x:x+w]
+            name = f'{newusername}_{image_count}.jpg'
+            cv2.imwrite(f'{userimagefolder}/{name}', face_img)
+            return jsonify({'success': True, 'image_count': image_count + 1})
+        return jsonify({'success': False, 'error': 'No face detected'})
+    except Exception as e:
+        logger.error(f"Error capturing face: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/finish_capture', methods=['POST'])
+def finish_capture():
+    try:
+        data = request.json
+        newusername = data['newusername']
+        newuserid = data['newuserid']
+        userimagefolder = f'static/faces/{newusername}_{newuserid}'
+        
+        train_model()
+        flash('Student added and face data captured successfully!', 'success')
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error finishing capture: {str(e)}")
+        flash(f'Error training model: {str(e)}', 'danger')
+        if os.path.exists(userimagefolder):
+            shutil.rmtree(userimagefolder)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

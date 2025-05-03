@@ -7,3 +7,5 @@ numpy
 pandas
 gunicorn
 scikit-learn
+Pillow
+Werkzeug

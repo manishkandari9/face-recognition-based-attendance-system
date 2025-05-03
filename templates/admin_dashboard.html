@@ -22,7 +22,6 @@
             color: #1f2937;
         }
 
-        /* Sidebar */
         .sidebar {
             width: 280px;
             background: linear-gradient(180deg, #4338ca, #7e22ce);
@@ -73,7 +72,6 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         }
 
-        /* Main Content */
         .main-content {
             margin-left: 280px;
             padding: 2rem;
@@ -82,7 +80,6 @@
             transition: margin-left 0.3s ease;
         }
 
-        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
@@ -105,7 +102,6 @@
             opacity: 0.9;
         }
 
-        /* Cards */
         .card {
             border: none;
             border-radius: 12px;
@@ -139,7 +135,6 @@
             background: linear-gradient(90deg, #059669, #10b981);
         }
 
-        /* Table */
         .table {
             margin-bottom: 0;
             border-radius: 8px;
@@ -165,7 +160,6 @@
             background: #f8fafc;
         }
 
-        /* Buttons */
         .btn-modern {
             padding: 0.75rem 1.5rem;
             border-radius: 8px;
@@ -188,7 +182,6 @@
             background: #2563eb;
         }
 
-        /* Forms */
         .form-control, .form-select {
             border-radius: 8px;
             border: 1px solid #d1d5db;
@@ -203,7 +196,6 @@
             background: white;
         }
 
-        /* Clock */
         .clock-container {
             background: white;
             padding: 0.75rem 1.25rem;
@@ -217,7 +209,6 @@
             font-family: 'Courier New', monospace;
         }
 
-        /* Alerts */
         .alert {
             border-radius: 8px;
             margin-bottom: 1.5rem;
@@ -237,7 +228,6 @@
             color: #991b1b;
         }
 
-        /* Hamburger Menu for Mobile */
         .hamburger {
             display: none;
             font-size: 1.5rem;
@@ -247,7 +237,6 @@
             cursor: pointer;
         }
 
-        /* Responsive Design */
         @media (max-width: 992px) {
             .sidebar {
                 width: 100%;
@@ -446,15 +435,14 @@
             const userIdError = document.getElementById('userid-error');
             const userId = userIdInput.value;
     
-            // Check if the User ID is exactly 11 digits
             if (!/^\d{11}$/.test(userId)) {
                 userIdError.textContent = 'User ID must be exactly 11 digits.';
                 userIdInput.focus();
-                return false; // Prevent form submission
+                return false;
             }
     
-            userIdError.textContent = ''; // Clear error message
-            return true; // Allow form submission
+            userIdError.textContent = '';
+            return true;
         }
     </script>
 </body>

@@ -106,7 +106,7 @@
             canvas.width = videoFeed.videoWidth || 640;
             canvas.height = videoFeed.videoHeight || 480;
             ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
-            canvas.toDataURL('image/jpeg', 0.8);
+            canvas.toDataURL('image/jpeg', 0.8); // Convert to base64
             canvas.toBlob(blob => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
@@ -123,22 +123,15 @@
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
                             ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
                             if (data.person) {
-                                identifiedPerson.textContent = `Identified: ${data.name} (${data.roll})`;
+                                identifiedPerson.textContent = `Identified: ${data.person}`;
                                 ctx.strokeStyle = 'green';
                                 ctx.lineWidth = 2;
                                 ctx.strokeRect(data.box.x, data.box.y, data.box.w, data.box.h);
-                                // Draw landmarks (4 corners of face)
-                                ctx.fillStyle = 'red';
-                                ctx.fillRect(data.box.x, data.box.y, 5, 5);
-                                ctx.fillRect(data.box.x + data.box.w, data.box.y, 5, 5);
-                                ctx.fillRect(data.box.x, data.box.y + data.box.h, 5, 5);
-                                ctx.fillRect(data.box.x + data.box.w, data.box.y + data.box.h, 5, 5);
-                                // Draw name and roll number
                                 ctx.fillStyle = 'green';
-                                ctx.fillRect(data.box.x, data.box.y - 40, data.box.w, 40);
+                                ctx.fillRect(data.box.x, data.box.y - 20, data.box.w, 20);
                                 ctx.fillStyle = 'white';
                                 ctx.font = '16px Arial';
-                                ctx.fillText(`${data.name} (${data.roll})`, data.box.x + 5, data.box.y - 10);
+                                ctx.fillText(data.person, data.box.x + 5, data.box.y - 5);
                             } else {
                                 identifiedPerson.textContent = '';
                             }

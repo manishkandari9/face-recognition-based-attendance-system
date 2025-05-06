@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -192,18 +191,20 @@
                                     <th scope="col">#</th>
                                     <th scope="col">Name</th>
                                     <th scope="col">Time</th>
+                                    <th scope="col">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for name, time in attendance %}
+                                {% for name, time, status in attendance %}
                                     <tr>
                                         <td>{{ loop.index }}</td>
                                         <td>{{ name }}</td>
                                         <td>{{ time }}</td>
+                                        <td>{{ status }}</td>
                                     </tr>
                                 {% else %}
                                     <tr>
-                                        <td colspan="3" class="text-center">No attendance records found for {{ selected_date | replace('_', '-') }}.</td>
+                                        <td colspan="4" class="text-center">No attendance records found for {{ selected_date | replace('_', '-') }}.</td>
                                     </tr>
                                 {% endfor %}
                             </tbody>

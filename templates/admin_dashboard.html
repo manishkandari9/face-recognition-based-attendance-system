@@ -31,7 +31,7 @@
             padding: 2rem 1.5rem;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 1.5rem;
             box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
             transition: transform 0.3s ease;
             z-index: 1000;
@@ -60,6 +60,7 @@
             transition: all 0.3s ease;
             font-weight: 500;
             background: rgba(255, 255, 255, 0.1);
+            z-index: 1001;
         }
 
         .sidebar-nav a:hover {
@@ -235,6 +236,7 @@
             border: none;
             color: white;
             cursor: pointer;
+            z-index: 1100;
         }
 
         @media (max-width: 992px) {
@@ -268,7 +270,6 @@
                 position: fixed;
                 top: 1rem;
                 left: 1rem;
-                z-index: 1100;
             }
 
             .btn-modern {
@@ -297,6 +298,12 @@
             <a href="/listusers" class="{% if request.path == '/listusers' %}active{% endif %}">
                 <span class="material-icons">people</span> View Users
             </a>
+            <a href="/set_morning_time" class="{% if request.path == '/set_morning_time' %}active{% endif %}">
+                <span class="material-icons">schedule</span> Set Morning Time
+            </a>
+            <a href="/set_cutoff" class="{% if request.path == '/set_cutoff' %}active{% endif %}">
+                <span class="material-icons">schedule</span> Set Cutoff Time
+            </a>
             <a href="/download?selected_date={{ selected_date }}" class="{% if request.path == '/download' %}active{% endif %}">
                 <span class="material-icons">download</span> Download Attendance
             </a>
@@ -311,7 +318,7 @@
         <div class="header">
             <div>
                 <h1>Admin Dashboard</h1>
-                <p>Date: {{ datetoday2 }} | Total Users: {{ totalreg }}</p>
+                <p>Date: {{ datetoday2 }} | Total Users: {{ totalreg }} | Morning Time: {{ morning_time }} | Cutoff Time: {{ cutoff_time }}</p>
             </div>
             <div class="clock-container">
                 <span class="material-icons">schedule</span>
@@ -360,6 +367,7 @@
                                         <th>Name</th>
                                         <th>ID</th>
                                         <th>Time</th>
+                                        <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -370,11 +378,20 @@
                                         <td>{{ names[i] }}</td>
                                         <td>{{ rolls[i] }}</td>
                                         <td>{{ times[i] }}</td>
+                                        <td>
+                                            {% if statuses[i] == 'Present' %}
+                                            <span class="badge bg-success">Present</span>
+                                            {% elif statuses[i] == 'Absent' %}
+                                            <span class="badge bg-danger">Absent</span>
+                                            {% else %}
+                                            <span class="badge bg-warning">Left Early</span>
+                                            {% endif %}
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                     {% else %}
                                     <tr>
-                                        <td colspan="4" class="text-center">No attendance records</td>
+                                        <td colspan="5" class="text-center">No attendance records</td>
                                     </tr>
                                     {% endif %}
                                 </tbody>
